@@ -114,7 +114,7 @@ def render():
         v_0 = -tm.dot(ray_dir, e_r) / (tm.length(ray_origin) * tm.dot(ray_dir, e_t))
         
         # Keyword arguments are not supported in Taichi device functions
-        result = perform_integration(u_0, v_0, 0.001, 10000)
+        result = perform_integration(u_0, v_0, 0.01, 5000)
         
         u_final = result.u
         v_final = result.v
@@ -138,11 +138,12 @@ def init():
 
 def main():
     init()
+    render()
     
     start_time = time.perf_counter()
     render()
     end_time = time.perf_counter()
-    print(f"Render time: {end_time - start_time:.2f} seconds")
+    print(f"Render time: {(end_time - start_time) * 1000:.7f} ms")
     
     output_numpy = output_image.to_numpy()
     
