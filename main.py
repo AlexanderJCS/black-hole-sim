@@ -1,9 +1,13 @@
 import time
 
+import numpy as np
+
 import taichi as ti
 import taichi.math as tm
 
-ti.init(arch=ti.gpu)
+from PIL import Image
+
+ti.init(arch=ti.vulkan)
 
 R_S = 1.0  # Ensure this is a float
 
@@ -15,6 +19,55 @@ look_at = ti.Vector.field(3, dtype=ti.f32, shape=())
 fov = ti.field(dtype=ti.f32, shape=())
 
 output_image = ti.Vector.field(3, dtype=ti.f32, shape=RESOLUTION)
+
+pil = Image.open("resources/refined_galactic_plane_and_nebulae_1.png").convert("RGBA")
+np_img = np.asarray(pil, dtype=np.float32) / 255.0   # shape (H, W, 4), 0..1 floats
+np_img = np.transpose(np_img, (1, 0, 2))            # shape (W, H, 4) to match your output_image[x, y]
+
+W, H = np_img.shape[0], np_img.shape[1]
+
+# create a Taichi Vector field and copy the numpy data into it
+spheremap_field = ti.Vector.field(4, dtype=ti.f32, shape=(W, H))
+spheremap_field.from_numpy(np_img)   # copies data to Taichi device memory
+
+# ---- bilinear sampler (wraps U horizontally, clamps V vertically) ----
+@ti.func
+def sample_spheremap_uv(u: ti.f32, v: ti.f32) -> tm.vec3:
+    # wrap u, clamp v
+    u = u - ti.floor(u)                      # wrap to [0,1)
+    v = ti.min(ti.max(v, 0.0), 1.0)          # clamp
+
+    # continuous coordinates
+    x = u * (W - 1)
+    y = v * (H - 1)
+
+    x0 = ti.cast(ti.floor(x), ti.i32)
+    y0 = ti.cast(ti.floor(y), ti.i32)
+    x1 = (x0 + 1) % W
+    y1 = ti.min(y0 + 1, H - 1)
+
+    sx = x - x0
+    sy = y - y0
+
+    c00 = spheremap_field[x0, y0]
+    c10 = spheremap_field[x1, y0]
+    c01 = spheremap_field[x0, y1]
+    c11 = spheremap_field[x1, y1]
+
+    c0 = c00 * (1.0 - sx) + c10 * sx
+    c1 = c01 * (1.0 - sx) + c11 * sx
+    c = c0 * (1.0 - sy) + c1 * sy
+
+    return tm.vec3(c.x, c.y, c.z)   # RGB
+
+# ---- replace your sample_spheremap that used spheremap_tex.sample(...) ----
+@ti.func
+def sample_spheremap(ray_dir: ti.types.vector(3, dtype=ti.f32)) -> tm.vec3:
+    theta = ti.acos(ray_dir.y)
+    phi = ti.atan2(ray_dir.z, ray_dir.x)
+    u = (phi + tm.pi) / (2 * tm.pi)
+    v = theta / tm.pi
+    return sample_spheremap_uv(u, v)
 
 
 @ti.func
@@ -126,7 +179,7 @@ def render():
         u_term = (1.0 / u_final) * (-e_r * tm.sin(phi_final) + e_t * tm.cos(phi_final))
         final_dir_3d = tm.normalize(v_term + u_term)
         
-        output_image[x, y] = final_dir_3d * 0.5 + 0.5 if result.hit_photon_sphere == 0 else tm.vec3(0.0, 0.0, 0.0)
+        output_image[x, y] = sample_spheremap(final_dir_3d) if result.hit_photon_sphere == 0 else tm.vec3(0.0, 0.0, 0.0)
 
 
 @ti.kernel
