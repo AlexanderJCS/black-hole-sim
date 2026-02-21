@@ -173,10 +173,13 @@ def render():
         v_final = result.v
         phi_final = result.phi
         
-        final_pos_3d = (1.0 / u_final) * (e_r * tm.cos(phi_final) + e_t * tm.sin(phi_final))
+        cos_phi_final = tm.cos(phi_final)
+        sin_phi_final = tm.sin(phi_final)
         
-        v_term = (-v_final / u_final ** 2) * (e_r * tm.cos(phi_final) + e_t * tm.sin(phi_final))
-        u_term = (1.0 / u_final) * (-e_r * tm.sin(phi_final) + e_t * tm.cos(phi_final))
+        final_pos_3d = (1.0 / u_final) * (e_r * cos_phi_final + e_t * sin_phi_final)
+        
+        v_term = (-v_final / u_final ** 2) * (e_r * cos_phi_final + e_t * sin_phi_final)
+        u_term = (1.0 / u_final) * (-e_r * sin_phi_final + e_t * cos_phi_final)
         final_dir_3d = tm.normalize(v_term + u_term)
         
         output_image[x, y] = sample_spheremap(final_dir_3d) if result.hit_photon_sphere == 0 else tm.vec3(0.0, 0.0, 0.0)
