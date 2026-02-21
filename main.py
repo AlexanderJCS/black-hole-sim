@@ -27,16 +27,16 @@ def integrate_rk4(u, v, dphi):
 
 
 @ti.func
-def perform_integration(u_0, v_0, dt, steps):
+def perform_integration(u_0, v_0, dphi, steps):
     u, v = u_0, v_0
-    phi = 0.0  # Explicitly track phi
+    phi = 0.0
     
     inv_photon_sphere = 1.0 / (1.5 * R_S)
     inv_range_limit = 1.0 / (50.0 * R_S)
     
     for _ in range(steps):
-        u, v = integrate_rk4(u, v, dt)
-        phi += dt
+        u, v = integrate_rk4(u, v, dphi)
+        phi += dphi
         
         if u > inv_photon_sphere or u < inv_range_limit:
             break
