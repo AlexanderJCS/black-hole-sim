@@ -87,11 +87,14 @@ def get_camera_basis():
 
 @ti.func
 def accretion_emissivity(pos: ti.types.vector(3, dtype=ti.f32)):
-    # Using the function max(10 * ln(r) / x^2, 0), whose shape is inspired by this graph:
-    #  https://link.springer.com/article/10.12942/lrr-2013-1/figures/10
-    
     r = pos.norm()
-    return ti.max(10.0 * tm.log(r) / (r * r), 0.0)
+    base = ti.max(10.0 * tm.log(r) / (r * r), 0.0)
+
+    height = 0.25
+    sigma = height / 4.0
+    vertical = tm.exp(-0.5 * (pos.y / sigma) ** 2)
+
+    return base * vertical
 
 
 @ti.func
@@ -99,10 +102,16 @@ def accretion_density(pos: ti.types.vector(3, dtype=ti.f32)):
     # accretion_absorption if inside the cylinder (with a hole in the middle), otherwise 0
     # the cylinder's inner radius is R_MS, outer radius is R_S * 10, and height is 0.25
     
+    height = 0.25
+    
     density = 0.0
     r = tm.sqrt(pos.x ** 2 + pos.z ** 2)
-    if R_MS < r < R_S * 10 and abs(pos.y) < 0.25:
+    if R_MS < r < R_S * 10 and abs(pos.y) < height:
         density = accretion_absorption
+        
+        # Multiply the density by the normal distribution on the y-axis. Sigma = height / 4.
+        sigma = height / 4.0
+        density *= tm.exp(-0.5 * (abs(pos.y) / sigma) ** 2)
     
     return density
 
@@ -245,7 +254,7 @@ def render():
 
 @ti.kernel
 def init():
-    camera_pos[None] = tm.vec3(15.0, 2.0, 0.0)
+    camera_pos[None] = tm.vec3(15.0, 0.0, 0.0)
     look_at[None] = tm.vec3(0.0, 0.0, 0.0)
     fov[None] = tm.radians(90.0)
 
