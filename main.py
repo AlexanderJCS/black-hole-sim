@@ -7,9 +7,13 @@ import taichi.math as tm
 
 from PIL import Image
 
-ti.init(arch=ti.vulkan)
+ti.init(arch=ti.gpu)
 
 R_S = 1.0  # Ensure this is a float
+R_MS = 3 * R_S  # https://en.wikipedia.org/wiki/Innermost_stable_circular_orbit
+
+accretion_absorption = 0.9  # absorption coefficient
+accretion_emission = 0.5  # emiited radiance per unit length
 
 HEIGHT = 720
 RESOLUTION = (HEIGHT * 16 // 9, HEIGHT)
@@ -30,7 +34,7 @@ W, H = np_img.shape[0], np_img.shape[1]
 spheremap_field = ti.Vector.field(4, dtype=ti.f32, shape=(W, H))
 spheremap_field.from_numpy(np_img)   # copies data to Taichi device memory
 
-# ---- bilinear sampler (wraps U horizontally, clamps V vertically) ----
+
 @ti.func
 def sample_spheremap_uv(u: ti.f32, v: ti.f32) -> tm.vec3:
     # wrap u, clamp v
@@ -58,9 +62,9 @@ def sample_spheremap_uv(u: ti.f32, v: ti.f32) -> tm.vec3:
     c1 = c01 * (1.0 - sx) + c11 * sx
     c = c0 * (1.0 - sy) + c1 * sy
 
-    return tm.vec3(c.x, c.y, c.z)   # RGB
+    return tm.vec3(c.x, c.y, c.z)
 
-# ---- replace your sample_spheremap that used spheremap_tex.sample(...) ----
+
 @ti.func
 def sample_spheremap(ray_dir: ti.types.vector(3, dtype=ti.f32)) -> tm.vec3:
     theta = ti.acos(ray_dir.y)
@@ -79,6 +83,28 @@ def get_camera_basis():
     u = up.cross(w).normalized()
     v = w.cross(u)
     return u, v, w
+
+
+@ti.func
+def accretion_emissivity(pos: ti.types.vector(3, dtype=ti.f32)):
+    # Using the function max(10 * ln(r) / x^2, 0), whose shape is inspired by this graph:
+    #  https://link.springer.com/article/10.12942/lrr-2013-1/figures/10
+    
+    r = pos.norm()
+    return ti.max(10.0 * tm.log(r) / (r * r), 0.0)
+
+
+@ti.func
+def accretion_density(pos: ti.types.vector(3, dtype=ti.f32)):
+    # accretion_absorption if inside the cylinder (with a hole in the middle), otherwise 0
+    # the cylinder's inner radius is R_MS, outer radius is R_S * 10, and height is 0.25
+    
+    density = 0.0
+    r = tm.sqrt(pos.x ** 2 + pos.z ** 2)
+    if R_MS < r < R_S * 10 and abs(pos.y) < 0.0625:
+        density = accretion_absorption
+    
+    return density
 
 
 @ti.func
@@ -122,13 +148,14 @@ IntegrationResult = ti.types.struct(
     u=ti.f32,
     v=ti.f32,
     phi=ti.f32,
+    light=ti.f32,
     hit_photon_sphere=ti.i32,
     hit_range_limit=ti.i32
 )
 
 
 @ti.func
-def perform_integration(u_0, v_0, dphi, steps) -> IntegrationResult:
+def perform_integration(u_0, v_0, dphi, steps, e_r, e_t) -> IntegrationResult:
     u, v = u_0, v_0
     phi = 0.0
     
@@ -138,9 +165,20 @@ def perform_integration(u_0, v_0, dphi, steps) -> IntegrationResult:
     hit_photon_sphere = 0
     hit_range_limit = 0
     
+    transmittance = 1.0
+    light = 0.0
+    
     for _ in range(steps):
         u, v = integrate_rk4(u, v, dphi)
         phi += dphi
+        
+        coords_3d = (1.0 / u) * (e_r * tm.cos(phi) + e_t * tm.sin(phi))
+        z_coord = coords_3d.z
+        
+        # Consider z +/- 1.0 as inside the volume
+        if abs(z_coord) <= 1.0:
+            transmittance *= ti.exp(-accretion_density(coords_3d) * dphi)
+            light += accretion_emissivity(coords_3d) * transmittance * dphi
         
         if u > inv_photon_sphere:
             hit_photon_sphere = 1
@@ -149,7 +187,7 @@ def perform_integration(u_0, v_0, dphi, steps) -> IntegrationResult:
             hit_range_limit = 1
             break
     
-    return IntegrationResult(u, v, phi, hit_photon_sphere, hit_range_limit)
+    return IntegrationResult(u, v, phi, light, hit_photon_sphere, hit_range_limit)
 
 
 @ti.kernel
@@ -167,7 +205,7 @@ def render():
         v_0 = -tm.dot(ray_dir, e_r) / (tm.length(ray_origin) * tm.dot(ray_dir, e_t))
         
         # Keyword arguments are not supported in Taichi device functions
-        result = perform_integration(u_0, v_0, 0.01, 5000)
+        result = perform_integration(u_0, v_0, 0.01, 5000, e_r, e_t)
         
         u_final = result.u
         v_final = result.v
@@ -182,12 +220,12 @@ def render():
         u_term = (1.0 / u_final) * (-e_r * sin_phi_final + e_t * cos_phi_final)
         final_dir_3d = tm.normalize(v_term + u_term)
         
-        output_image[x, y] = sample_spheremap(final_dir_3d) if result.hit_photon_sphere == 0 else tm.vec3(0.0, 0.0, 0.0)
+        output_image[x, y] = result.light
 
 
 @ti.kernel
 def init():
-    camera_pos[None] = tm.vec3(0.0, 0.0, -5.0)
+    camera_pos[None] = tm.vec3(0.0, -5.0, 1.0)
     look_at[None] = tm.vec3(0.0, 0.0, 0.0)
     fov[None] = tm.radians(90.0)
 
