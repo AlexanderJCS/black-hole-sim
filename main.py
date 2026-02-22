@@ -126,7 +126,7 @@ def accretion_density(pos: ti.types.vector(3, dtype=ti.f32)):
 
 
 @ti.func
-def disk_temperature(r, temp_scale=16000.0):
+def disk_temperature(r, temp_scale=24000.0):
     r_in = R_MS
     
     temp = 0.0
@@ -155,7 +155,7 @@ def temp_to_color(temp) -> ti.types.vector(3, dtype=ti.f32):
 
 
 @ti.func
-def temp_to_intensity(temp, t_ref=12000.0):
+def temp_to_intensity(temp, t_ref=24000.0):
     # normalized Stefan-Boltzmann style intensity in 0..inf but clamped to avoid huge numbers
     norm = temp / t_ref
     
@@ -248,10 +248,9 @@ def perform_integration(u_0, v_0, max_dphi, max_steps, e_r, e_t) -> IntegrationR
             temp = disk_temperature(radius_2d)
             rgb = temp_to_color(temp)
             intensity = temp_to_intensity(temp)
-            curr_emiss = rgb * intensity  # For some reason this line is crashing everything
             
             curr_emiss = accretion_emissivity(coords_3d)
-            light += 0.5 * (prev_emiss + curr_emiss) * transmittance * ds
+            light += 0.5 * (prev_emiss + curr_emiss) * transmittance * ds * rgb * intensity * 1000
             prev_emiss = curr_emiss
 
             transmittance *= tm.exp(-rho * ds)
