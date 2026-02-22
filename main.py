@@ -315,9 +315,17 @@ def render():
 
 @ti.kernel
 def init():
-    camera_pos[None] = tm.vec3(35.0, 5.0, 0.0)
+    # Camera positions
+    
+    # Space Telescope
+    # camera_pos[None] = tm.vec3(35.0, 5.0, 0.0)
+    # look_at[None] = tm.vec3(0.0, 0.0, 0.0)
+    # fov[None] = tm.radians(20.0)
+    
+    # Perfectly from side, up-close, wide angle
+    camera_pos[None] = tm.vec3(12.5, 0.0, 0.0)
     look_at[None] = tm.vec3(0.0, 0.0, 0.0)
-    fov[None] = tm.radians(20.0)
+    fov[None] = tm.radians(90.0)
 
 
 def main():
