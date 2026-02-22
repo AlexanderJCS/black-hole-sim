@@ -1,0 +1,2 @@
+Temperature -> color cmap credit: Mitchell Charity
+http://www.vendian.org/mncharity/dir3/blackbody/UnstableURLs/bbr_color.html

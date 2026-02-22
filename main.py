@@ -34,6 +34,15 @@ W, H = np_img.shape[0], np_img.shape[1]
 spheremap_field = ti.Vector.field(4, dtype=ti.f32, shape=(W, H))
 spheremap_field.from_numpy(np_img)   # copies data to Taichi device memory
 
+color_csv = np.loadtxt("resources/blackbody_color.csv", delimiter=",", skiprows=1).astype(np.float32)
+# The temperature as a function of row index is a linear function following the formula:
+#   temp = 1000 + index * 100
+color_srgb = color_csv[:, 1:4]  # sRGB
+color_linear = np.where(color_srgb <= 0.04045, color_srgb / 12.92, ((color_srgb + 0.055) / 1.055) ** 2.4)
+
+color_linear_gpu = ti.Vector.field(3, dtype=ti.f32, shape=color_linear.shape[0])
+color_linear_gpu.from_numpy(color_linear)
+
 
 @ti.func
 def sample_spheremap_uv(u: ti.f32, v: ti.f32) -> tm.vec3:
@@ -117,6 +126,43 @@ def accretion_density(pos: ti.types.vector(3, dtype=ti.f32)):
 
 
 @ti.func
+def disk_temperature(r, temp_scale=16000.0):
+    r_in = R_MS
+    
+    temp = 0.0
+    if r > r_in:
+        temp = tm.pow(r, -0.75) * tm.pow(1.0 - tm.sqrt(r_in / r), 0.25)
+    
+    return temp * temp_scale
+
+
+@ti.func
+def temp_to_color(temp) -> ti.types.vector(3, dtype=ti.f32):
+    color = tm.vec3(0, 0, 0)
+    
+    if temp > 1000.0:
+        lookup_value = (temp - 1000.0) / 100.0
+        index = ti.cast(ti.floor(lookup_value), ti.i32)
+        interpolant = lookup_value - index
+        index = ti.min(index, color_linear_gpu.shape[0] - 2)  # ensure index+1 is in bounds
+        
+        lower_color = color_linear_gpu[index]
+        upper_color = color_linear_gpu[index + 1]
+        
+        color = tm.mix(lower_color, upper_color, interpolant)
+    
+    return color
+
+
+@ti.func
+def temp_to_intensity(temp, t_ref=12000.0):
+    # normalized Stefan-Boltzmann style intensity in 0..inf but clamped to avoid huge numbers
+    norm = temp / t_ref
+    
+    return tm.pow(norm, 4.0)
+
+
+@ti.func
 def start_ray(x: int, y: int) -> tm.vec3:
     u, v, w = get_camera_basis()
     aspect = RESOLUTION[0] / RESOLUTION[1]
@@ -157,7 +203,7 @@ IntegrationResult = ti.types.struct(
     u=ti.f32,
     v=ti.f32,
     phi=ti.f32,
-    light=ti.f32,
+    light=ti.types.vector(3, dtype=ti.f32),
     hit_photon_sphere=ti.i32,
     hit_range_limit=ti.i32
 )
@@ -172,7 +218,7 @@ def perform_integration(u_0, v_0, max_dphi, max_steps, e_r, e_t) -> IntegrationR
     hit_photon_sphere = 0
     hit_range_limit = 0
     transmittance = 1.0
-    light = 0.0
+    light = tm.vec3(0.0, 0.0, 0.0)
 
     # initial position
     prev_coords_3d = (1.0 / u) * (e_r * tm.cos(phi) + e_t * tm.sin(phi))
@@ -198,6 +244,12 @@ def perform_integration(u_0, v_0, max_dphi, max_steps, e_r, e_t) -> IntegrationR
 
         if rho > 0.0:
             # trap rule for emission: avg(prev_emiss, curr_emiss) * transmittance * ds
+            radius_2d = tm.sqrt(coords_3d.x ** 2 + coords_3d.z ** 2)
+            temp = disk_temperature(radius_2d)
+            rgb = temp_to_color(temp)
+            intensity = temp_to_intensity(temp)
+            curr_emiss = rgb * intensity  # For some reason this line is crashing everything
+            
             curr_emiss = accretion_emissivity(coords_3d)
             light += 0.5 * (prev_emiss + curr_emiss) * transmittance * ds
             prev_emiss = curr_emiss
