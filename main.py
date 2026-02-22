@@ -12,8 +12,7 @@ ti.init(arch=ti.gpu)
 R_S = 1.0  # Ensure this is a float
 R_MS = 3 * R_S  # https://en.wikipedia.org/wiki/Innermost_stable_circular_orbit
 
-accretion_absorption = 10.9  # absorption coefficient
-accretion_emission = 0.5  # emiited radiance per unit length
+accretion_absorption = 10.0  # absorption coefficient
 
 HEIGHT = 720
 RESOLUTION = (HEIGHT * 16 // 9, HEIGHT)
@@ -155,11 +154,13 @@ def temp_to_color(temp) -> ti.types.vector(3, dtype=ti.f32):
 
 
 @ti.func
-def temp_to_intensity(temp, t_ref=16000.0):
-    # normalized Stefan-Boltzmann style intensity in 0..inf but clamped to avoid huge numbers
+def temp_to_intensity(temp, t_ref=16000.0, t_vis=16000.0):
     norm = temp / t_ref
     
-    return tm.pow(norm, 4.0)
+    # exponential suppression of cool temperatures
+    vis_factor = 1.0 - tm.exp(-temp / t_vis)
+    
+    return tm.pow(norm, 4.0) * vis_factor
 
 
 @ti.func
@@ -224,7 +225,7 @@ def perform_integration(u_0, v_0, max_dphi, max_steps, e_r, e_t) -> IntegrationR
     prev_coords_3d = (1.0 / u) * (e_r * tm.cos(phi) + e_t * tm.sin(phi))
     prev_emiss = accretion_emissivity(prev_coords_3d)
 
-    ds_target = 0.02  # spatial step target; reduce for higher quality
+    ds_target = 0.005  # spatial step target; reduce for higher quality
     for i in range(max_steps):
         # choose angle step so arc length ~ ds_target: dphi = ds_target / r = ds_target * u
         dphi_local = ds_target * u
