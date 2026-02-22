@@ -101,7 +101,7 @@ def accretion_density(pos: ti.types.vector(3, dtype=ti.f32)):
     
     density = 0.0
     r = tm.sqrt(pos.x ** 2 + pos.z ** 2)
-    if R_MS < r < R_S * 10 and abs(pos.y) < 0.0625:
+    if R_MS < r < R_S * 10 and abs(pos.y) < 0.25:
         density = accretion_absorption
     
     return density
@@ -155,38 +155,58 @@ IntegrationResult = ti.types.struct(
 
 
 @ti.func
-def perform_integration(u_0, v_0, dphi, steps, e_r, e_t) -> IntegrationResult:
+def perform_integration(u_0, v_0, max_dphi, max_steps, e_r, e_t) -> IntegrationResult:
     u, v = u_0, v_0
     phi = 0.0
-    
     inv_photon_sphere = 1.0 / (1.5 * R_S)
     inv_range_limit = 1.0 / (50.0 * R_S)
-    
     hit_photon_sphere = 0
     hit_range_limit = 0
-    
     transmittance = 1.0
     light = 0.0
-    
-    for _ in range(steps):
-        u, v = integrate_rk4(u, v, dphi)
-        phi += dphi
+
+    # initial position
+    prev_coords_3d = (1.0 / u) * (e_r * tm.cos(phi) + e_t * tm.sin(phi))
+    prev_emiss = accretion_emissivity(prev_coords_3d)
+
+    ds_target = 0.02  # spatial step target; reduce for higher quality
+    for i in range(max_steps):
+        # choose angle step so arc length ~ ds_target: dphi = ds_target / r = ds_target * u
+        dphi_local = ds_target * u
         
-        coords_3d = (1.0 / u) * (e_r * tm.cos(phi) + e_t * tm.sin(phi))
-        z_coord = coords_3d.z
-        
-        # Consider z +/- 1.0 as inside the volume
-        if abs(z_coord) <= 1.0:
-            transmittance *= ti.exp(-accretion_density(coords_3d) * dphi)
-            light += accretion_emissivity(coords_3d) * transmittance * dphi
-        
+        # clamp for stability
+        dphi_local = tm.clamp(dphi_local, 1e-5, max_dphi)
+
+        # integrate by adaptive angle
+        u_next, v_next = integrate_rk4(u, v, dphi_local)
+
+        phi_next = phi + dphi_local
+        coords_3d = (1.0 / u_next) * (e_r * tm.cos(phi_next) + e_t * tm.sin(phi_next))
+        ds = tm.length(coords_3d - prev_coords_3d)
+
+        # sample density with smoothed edges (see next fix)
+        rho = accretion_density(coords_3d)
+
+        if rho > 0.0:
+            # trap rule for emission: avg(prev_emiss, curr_emiss) * transmittance * ds
+            curr_emiss = accretion_emissivity(coords_3d)
+            light += 0.5 * (prev_emiss + curr_emiss) * transmittance * ds
+            prev_emiss = curr_emiss
+
+            transmittance *= tm.exp(-rho * ds)
+
+        prev_coords_3d = coords_3d
+        u, v, phi = u_next, v_next, phi_next
+
+        if transmittance < 1e-3:
+            break
         if u > inv_photon_sphere:
             hit_photon_sphere = 1
             break
         if u < inv_range_limit:
             hit_range_limit = 1
             break
-    
+
     return IntegrationResult(u, v, phi, light, hit_photon_sphere, hit_range_limit)
 
 
@@ -225,7 +245,7 @@ def render():
 
 @ti.kernel
 def init():
-    camera_pos[None] = tm.vec3(0.0, -5.0, 1.0)
+    camera_pos[None] = tm.vec3(15.0, 2.0, 0.0)
     look_at[None] = tm.vec3(0.0, 0.0, 0.0)
     fov[None] = tm.radians(90.0)
 
