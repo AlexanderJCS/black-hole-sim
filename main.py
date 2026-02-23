@@ -12,7 +12,7 @@ ti.init(arch=ti.gpu)
 R_S = 1.0  # Ensure this is a float
 R_MS = 3 * R_S  # https://en.wikipedia.org/wiki/Innermost_stable_circular_orbit
 
-accretion_absorption = 10.0  # absorption coefficient
+accretion_absorption = 1.0  # absorption coefficient
 
 HEIGHT = 720
 RESOLUTION = (HEIGHT * 16 // 9, HEIGHT)
@@ -94,18 +94,6 @@ def get_camera_basis():
 
 
 @ti.func
-def accretion_emissivity(pos: ti.types.vector(3, dtype=ti.f32)):
-    r = pos.norm()
-    base = ti.max(10.0 * tm.log(r) / (r * r), 0.0)
-
-    height = 0.25
-    sigma = height / 4.0
-    vertical = tm.exp(-0.5 * (pos.y / sigma) ** 2)
-
-    return base * vertical
-
-
-@ti.func
 def accretion_density(pos: ti.types.vector(3, dtype=ti.f32)):
     # accretion_absorption if inside the cylinder (with a hole in the middle), otherwise 0
     # the cylinder's inner radius is R_MS, outer radius is R_S * 10, and height is 0.25
@@ -114,8 +102,9 @@ def accretion_density(pos: ti.types.vector(3, dtype=ti.f32)):
     
     density = 0.0
     r = tm.sqrt(pos.x ** 2 + pos.z ** 2)
-    if R_MS < r < R_S * 10 and abs(pos.y) < height:
-        density = accretion_absorption
+    if R_MS < r and abs(pos.y) < height:
+        density = tm.pow(r, -0.75) * tm.pow(1.0 - tm.sqrt(R_MS / r), 0.25)
+        density *= accretion_absorption
         
         # Multiply the density by the normal distribution on the y-axis. Sigma = height / 4.
         sigma = height / 4.0
@@ -154,7 +143,7 @@ def temp_to_color(temp) -> ti.types.vector(3, dtype=ti.f32):
 
 
 @ti.func
-def temp_to_intensity(temp, t_ref=16000.0, t_vis=16000.0):
+def temp_to_intensity(temp, t_ref=12000.0, t_vis=4000.0):
     norm = temp / t_ref
     
     # exponential suppression of cool temperatures
@@ -223,7 +212,6 @@ def perform_integration(u_0, v_0, max_dphi, max_steps, e_r, e_t) -> IntegrationR
 
     # initial position
     prev_coords_3d = (1.0 / u) * (e_r * tm.cos(phi) + e_t * tm.sin(phi))
-    prev_emiss = accretion_emissivity(prev_coords_3d)
 
     ds_target = 0.005  # spatial step target; reduce for higher quality
     for i in range(max_steps):
@@ -249,10 +237,9 @@ def perform_integration(u_0, v_0, max_dphi, max_steps, e_r, e_t) -> IntegrationR
             temp = disk_temperature(radius_2d)
             rgb = temp_to_color(temp)
             intensity = temp_to_intensity(temp)
+            emissivity = temp_to_intensity(temp)
             
-            curr_emiss = accretion_emissivity(coords_3d)
-            light += 0.5 * (prev_emiss + curr_emiss) * transmittance * ds * rgb * intensity * 1000
-            prev_emiss = curr_emiss
+            light += 0.5 * emissivity * transmittance * ds * rgb * intensity * 1000
 
             transmittance *= tm.exp(-rho * ds)
 
@@ -319,14 +306,14 @@ def init():
     # Camera positions
     
     # Space Telescope
-    camera_pos[None] = tm.vec3(35.0, 5.0, 0.0)
-    look_at[None] = tm.vec3(0.0, 0.0, 0.0)
-    fov[None] = tm.radians(20.0)
+    # camera_pos[None] = tm.vec3(35.0, 5.0, 0.0)
+    # look_at[None] = tm.vec3(0.0, 0.0, 0.0)
+    # fov[None] = tm.radians(30.0)
     
     # Perfectly from side, up-close, wide angle
-    # camera_pos[None] = tm.vec3(12.5, 0.0, 0.0)
-    # look_at[None] = tm.vec3(0.0, 0.0, 0.0)
-    # fov[None] = tm.radians(90.0)
+    camera_pos[None] = tm.vec3(20.0, 0.0, 0.0)
+    look_at[None] = tm.vec3(0.0, 0.0, 0.0)
+    fov[None] = tm.radians(90.0)
 
 
 def main():
