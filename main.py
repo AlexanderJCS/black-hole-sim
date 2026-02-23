@@ -12,7 +12,8 @@ ti.init(arch=ti.gpu)
 R_S = 1.0  # Ensure this is a float
 R_MS = 3 * R_S  # https://en.wikipedia.org/wiki/Innermost_stable_circular_orbit
 
-accretion_absorption = 1.0  # absorption coefficient
+accretion_absorption = 10.0  # absorption coefficient
+brightness_multiplier = 10000.0
 
 HEIGHT = 720
 RESOLUTION = (HEIGHT * 16 // 9, HEIGHT)
@@ -188,8 +189,8 @@ IntegrationResult = ti.types.struct(
     v=ti.f32,
     phi=ti.f32,
     light=ti.types.vector(3, dtype=ti.f32),
+    final_transmittance=ti.f32,
     hit_photon_sphere=ti.i32,
-    hit_range_limit=ti.i32
 )
 
 
@@ -237,7 +238,7 @@ def perform_integration(u_0, v_0, max_dphi, max_steps, e_r, e_t) -> IntegrationR
             sigma = height / 3.0
             y_falloff = tm.exp(-0.5 * (abs(coords_3d.y) / sigma) ** 2)
             
-            light += 0.5 * emissivity * transmittance * ds * rgb * intensity * 1000 * y_falloff
+            light += 0.5 * emissivity * transmittance * ds * rgb * intensity * y_falloff
 
             transmittance *= tm.exp(-rho * ds)
 
@@ -250,10 +251,9 @@ def perform_integration(u_0, v_0, max_dphi, max_steps, e_r, e_t) -> IntegrationR
             hit_photon_sphere = 1
             break
         if u < inv_range_limit:
-            hit_range_limit = 1
             break
 
-    return IntegrationResult(u, v, phi, light, hit_photon_sphere, hit_range_limit)
+    return IntegrationResult(u, v, phi, light, transmittance, hit_photon_sphere)
 
 
 @ti.func
@@ -296,7 +296,9 @@ def render():
         u_term = (1.0 / u_final) * (-e_r * sin_phi_final + e_t * cos_phi_final)
         final_dir_3d = tm.normalize(v_term + u_term)
         
-        output_image[x, y] = tonemap_aces(result.light)
+        skybox_color = sample_spheremap(final_dir_3d) if result.hit_photon_sphere == 0 else tm.vec3(0.0, 0.0, 0.0)
+        
+        output_image[x, y] = tonemap_aces(result.light * brightness_multiplier + skybox_color * result.final_transmittance)
 
 
 @ti.kernel
@@ -304,14 +306,14 @@ def init():
     # Camera positions
     
     # Space Telescope
-    camera_pos[None] = tm.vec3(35.0, 5.0, 0.0)
-    look_at[None] = tm.vec3(0.0, 0.0, 0.0)
-    fov[None] = tm.radians(30.0)
+    # camera_pos[None] = tm.vec3(35.0, 5.0, 0.0)
+    # look_at[None] = tm.vec3(0.0, 0.0, 0.0)
+    # fov[None] = tm.radians(30.0)
     
     # Perfectly from side, up-close, wide angle
-    # camera_pos[None] = tm.vec3(20.0, 0.0, 0.0)
-    # look_at[None] = tm.vec3(0.0, 0.0, 0.0)
-    # fov[None] = tm.radians(90.0)
+    camera_pos[None] = tm.vec3(20.0, 0.0, 0.0)
+    look_at[None] = tm.vec3(0.0, 0.0, 0.0)
+    fov[None] = tm.radians(90.0)
 
 
 def main():
