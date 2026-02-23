@@ -94,21 +94,15 @@ def get_camera_basis():
 
 
 @ti.func
-def accretion_density(pos: ti.types.vector(3, dtype=ti.f32)):
+def accretion_density(pos: ti.types.vector(3, dtype=ti.f32), height):
     # accretion_absorption if inside the cylinder (with a hole in the middle), otherwise 0
     # the cylinder's inner radius is R_MS, outer radius is R_S * 10, and height is 0.25
-    
-    height = 0.25
     
     density = 0.0
     r = tm.sqrt(pos.x ** 2 + pos.z ** 2)
     if R_MS < r and abs(pos.y) < height:
         density = tm.pow(r, -0.75) * tm.pow(1.0 - tm.sqrt(R_MS / r), 0.25)
         density *= accretion_absorption
-        
-        # Multiply the density by the normal distribution on the y-axis. Sigma = height / 4.
-        sigma = height / 4.0
-        density *= tm.exp(-0.5 * (abs(pos.y) / sigma) ** 2)
     
     return density
 
@@ -229,7 +223,8 @@ def perform_integration(u_0, v_0, max_dphi, max_steps, e_r, e_t) -> IntegrationR
         ds = tm.length(coords_3d - prev_coords_3d)
 
         # sample density with smoothed edges (see next fix)
-        rho = accretion_density(coords_3d)
+        height = 0.25
+        rho = accretion_density(coords_3d, height)
 
         if rho > 0.0:
             # trap rule for emission: avg(prev_emiss, curr_emiss) * transmittance * ds
@@ -239,7 +234,10 @@ def perform_integration(u_0, v_0, max_dphi, max_steps, e_r, e_t) -> IntegrationR
             intensity = temp_to_intensity(temp)
             emissivity = temp_to_intensity(temp)
             
-            light += 0.5 * emissivity * transmittance * ds * rgb * intensity * 1000
+            sigma = height / 3.0
+            y_falloff = tm.exp(-0.5 * (abs(coords_3d.y) / sigma) ** 2)
+            
+            light += 0.5 * emissivity * transmittance * ds * rgb * intensity * 1000 * y_falloff
 
             transmittance *= tm.exp(-rho * ds)
 
@@ -306,14 +304,14 @@ def init():
     # Camera positions
     
     # Space Telescope
-    # camera_pos[None] = tm.vec3(35.0, 5.0, 0.0)
-    # look_at[None] = tm.vec3(0.0, 0.0, 0.0)
-    # fov[None] = tm.radians(30.0)
+    camera_pos[None] = tm.vec3(35.0, 5.0, 0.0)
+    look_at[None] = tm.vec3(0.0, 0.0, 0.0)
+    fov[None] = tm.radians(30.0)
     
     # Perfectly from side, up-close, wide angle
-    camera_pos[None] = tm.vec3(20.0, 0.0, 0.0)
-    look_at[None] = tm.vec3(0.0, 0.0, 0.0)
-    fov[None] = tm.radians(90.0)
+    # camera_pos[None] = tm.vec3(20.0, 0.0, 0.0)
+    # look_at[None] = tm.vec3(0.0, 0.0, 0.0)
+    # fov[None] = tm.radians(90.0)
 
 
 def main():
