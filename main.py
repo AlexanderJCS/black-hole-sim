@@ -35,7 +35,8 @@ camera_pos = ti.Vector.field(3, dtype=ti.f32, shape=())  # mutable scalar vec3
 look_at = ti.Vector.field(3, dtype=ti.f32, shape=())
 fov = ti.field(dtype=ti.f32, shape=())
 
-output_image = ti.Vector.field(3, dtype=ti.f32, shape=RESOLUTION)
+linear_image = ti.Vector.field(3, dtype=ti.f32, shape=RESOLUTION)
+srgb_image = ti.Vector.field(3, dtype=ti.f32, shape=RESOLUTION)
 
 pil = Image.open("resources/refined_galactic_plane_and_nebulae_1.png").convert("RGBA")
 np_img = np.asarray(pil, dtype=np.float32) / 255.0   # shape (H, W, 4), 0..1 floats
@@ -172,6 +173,15 @@ def temp_to_intensity(temp, t_ref=12000.0, t_vis=4000.0):
     
     return tm.pow(norm, 4.0) * vis_factor
 
+@ti.func
+def random_gaussian() -> tm.vec2:
+    # Borrowed from chapter 1 of https://nvpro-samples.github.io/vk_mini_path_tracer/extras.html
+    u1 = max(1e-38, ti.random())
+    u2 = ti.random()
+    r = tm.sqrt(-2.0 * tm.log(u1))
+    theta = 2 * tm.pi * u2
+    return r * tm.vec2(tm.cos(theta), tm.sin(theta))
+
 
 @ti.func
 def start_ray(x: int, y: int) -> tm.vec3:
@@ -180,8 +190,10 @@ def start_ray(x: int, y: int) -> tm.vec3:
     half_height = ti.tan(fov[None] / 2.0)
     half_width = half_height * aspect
 
-    pixel_u = (x + 0.5) / RESOLUTION[0]
-    pixel_v = (y + 0.5) / RESOLUTION[1]
+    jitter = random_gaussian() * 0.375
+
+    pixel_u = (x + 0.5 + jitter.x) / RESOLUTION[0]
+    pixel_v = (y + 0.5 + jitter.y) / RESOLUTION[1]
 
     horizontal = 2 * half_width * u
     vertical = 2 * half_height * v
@@ -294,7 +306,7 @@ def tonemap_aces(color):
 
 
 @ti.kernel
-def render():
+def render(frame_idx: ti.i32):
     for x, y in ti.ndrange(RESOLUTION[0], RESOLUTION[1]):
         ray_origin = camera_pos[None]
         ray_dir = start_ray(x, y)
@@ -325,8 +337,13 @@ def render():
         
         skybox_color = sample_spheremap(final_dir_3d) if result.hit_photon_sphere == 0 else tm.vec3(0.0, 0.0, 0.0)
         
-        output_image[x, y] = tonemap_aces(result.light * brightness_multiplier + skybox_color * result.final_transmittance)
-
+        final_color = result.light * brightness_multiplier + skybox_color * result.final_transmittance
+        if frame_idx == 0:
+            linear_image[x, y] = final_color
+        else:
+            prev_color = linear_image[x, y]
+            new_color = (prev_color * frame_idx + final_color) / (frame_idx + 1)
+            linear_image[x, y] = new_color
 
 @ti.kernel
 def init():
@@ -348,22 +365,27 @@ def init():
     # fov[None] = tm.radians(90.0)
 
 
+@ti.kernel
+def tonemap():
+    for x, y in ti.ndrange(RESOLUTION[0], RESOLUTION[1]):
+        color = linear_image[x, y]
+        srgb_image[x, y] = tonemap_aces(color)
+
+
 def main():
     init()
-    render()
-    
-    start_time = time.perf_counter()
-    render()
-    end_time = time.perf_counter()
-    print(f"Render time: {(end_time - start_time) * 1000:.7f} ms")
-    
-    output_numpy = output_image.to_numpy()
-    
-    # Show output image
-    gui = ti.GUI("Black Hole Ray Tracing", RESOLUTION)
-    while gui.running:
-        gui.set_image(output_numpy)
-        gui.show()
+
+    window = ti.ui.Window("Black Hole Ray Tracing", RESOLUTION)
+    canvas = window.get_canvas()
+
+    frame_idx = 0
+    while window.running:
+        render(frame_idx)
+        tonemap()
+
+        canvas.set_image(srgb_image)
+        window.show()
+        frame_idx += 1
 
 
 if __name__ == "__main__":
