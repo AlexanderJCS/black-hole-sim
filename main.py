@@ -12,7 +12,7 @@ ti.init(arch=ti.gpu)
 R_S = 1.0  # Ensure this is a float
 R_MS = 3 * R_S  # https://en.wikipedia.org/wiki/Innermost_stable_circular_orbit
 
-accretion_absorption = 10.0  # absorption coefficient
+accretion_absorption = 1.0  # absorption coefficient
 brightness_multiplier = 10000.0
 
 HEIGHT = 720
@@ -306,14 +306,14 @@ def init():
     # Camera positions
     
     # Space Telescope
-    # camera_pos[None] = tm.vec3(37.5, 5.0, 0.0)
-    # look_at[None] = tm.vec3(0.0, 0.0, 0.0)
-    # fov[None] = tm.radians(30.0)
-    
-    # Space telescope, top-down
-    camera_pos[None] = tm.vec3(0.0, 40, 0.0)
+    camera_pos[None] = tm.vec3(37.5, 5.0, 0.0)
     look_at[None] = tm.vec3(0.0, 0.0, 0.0)
     fov[None] = tm.radians(30.0)
+    
+    # Space telescope, top-down
+    # camera_pos[None] = tm.vec3(0.0, 40, 0.0)
+    # look_at[None] = tm.vec3(0.0, 0.0, 0.0)
+    # fov[None] = tm.radians(30.0)
     
     # Perfectly from side, up-close, wide angle
     # camera_pos[None] = tm.vec3(20.0, 0.0, 0.0)
