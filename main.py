@@ -1,5 +1,3 @@
-import time
-
 import numpy as np
 
 import taichi as ti
@@ -26,7 +24,7 @@ scaled_C = real_C * scale ** 0.5
 R_MS = 3 * R_S  # https://en.wikipedia.org/wiki/Innermost_stable_circular_orbit
 
 accretion_absorption = 1.0  # absorption coefficient
-brightness_multiplier = 10000.0
+brightness_multiplier = 5000.0
 
 HEIGHT = 720
 RESOLUTION = (HEIGHT * 16 // 9, HEIGHT)
@@ -128,11 +126,19 @@ def orbital_velocity(r):
     # v = sqrt(G * M / r) / sqrt(1 - 2 * G * M / (r * c^2))
     # But since r is in units of R_S = 2GM/c^2, we can simplify.
     # Let r = x * R_S, and since R_S = 2GM/c^2
-    # Then we get v = c / sqrt(2(x - 1)) for x > 1
+    # Then we get v = c (sqrt(1 / 2(r - 1)))
 
     x = r / R_S
 
-    return scaled_C / tm.sqrt(2 * (x - 1)) if x > 1 else 0.0  # no stable orbits inside R_S, so return 0
+    return scaled_C * tm.sqrt(1 / (2 * (x - 1))) if x > 1 else 0.0  # no stable orbits inside R_S, so return 0
+
+
+@ti.func
+def orbital_velocity_direction(pos: ti.types.vector(3, dtype=ti.f32)):
+    e_r = tm.normalize(pos)
+    up = tm.vec3(0.0, 1.0, 0.0)
+    e_t = tm.normalize(tm.cross(up, e_r))  # azimuthal (prograde) direction
+    return e_t
 
 
 @ti.func
@@ -265,8 +271,14 @@ def perform_integration(u_0, v_0, max_dphi, max_steps, e_r, e_t) -> IntegrationR
         rho = accretion_density(coords_3d, height)
 
         if rho > 0.0:
-            # trap rule for emission: avg(prev_emiss, curr_emiss) * transmittance * ds
             velocity = orbital_velocity(1.0 / u_next)
+            vel_dir = orbital_velocity_direction(coords_3d)
+            beta = velocity / scaled_C
+            observer_dir = tm.normalize(camera_pos[None] - coords_3d)
+            doppler_cos_theta = vel_dir.dot(observer_dir)  # for doppler shift
+            gamma = 1.0 / tm.sqrt(1.0 - beta ** 2)
+            doppler_factor = 1 / (gamma * (1.0 - beta * doppler_cos_theta))
+            doppler_beaming_factor = tm.pow(doppler_factor, 3.0)  # intensity scales as frequency^3 for blackbody
 
             radius_2d = tm.sqrt(coords_3d.x ** 2 + coords_3d.z ** 2)
             temp = disk_temperature(radius_2d)
@@ -277,7 +289,7 @@ def perform_integration(u_0, v_0, max_dphi, max_steps, e_r, e_t) -> IntegrationR
             sigma = height / 3.0
             y_falloff = tm.exp(-0.5 * (abs(coords_3d.y) / sigma) ** 2)
             
-            light += 0.5 * emissivity * transmittance * ds * rgb * intensity * y_falloff
+            light += emissivity * transmittance * ds * rgb * intensity * y_falloff * doppler_beaming_factor
 
             transmittance *= tm.exp(-rho * ds)
 
