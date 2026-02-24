@@ -274,7 +274,7 @@ def perform_integration(u_0, v_0, max_dphi, max_steps, e_r, e_t) -> IntegrationR
             velocity = orbital_velocity(1.0 / u_next)
             vel_dir = orbital_velocity_direction(coords_3d)
             beta = tm.clamp(velocity / scaled_C, 0.0, 0.99999)
-            observer_dir = tm.normalize(camera_pos[None] - coords_3d)
+            observer_dir = tm.normalize(prev_coords_3d - coords_3d)  # due to curved spacetime this is *not* camera_pos - coords_3d
             doppler_cos_theta = vel_dir.dot(observer_dir)  # for doppler shift
             gamma = 1.0 / tm.sqrt(1.0 - beta ** 2)
             g_doppler = 1 / (gamma * (1.0 - beta * doppler_cos_theta))
