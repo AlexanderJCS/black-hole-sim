@@ -154,19 +154,19 @@ def disk_temperature(r, temp_scale=32000.0):
 
 @ti.func
 def temp_to_color(temp) -> ti.types.vector(3, dtype=ti.f32):
-    color = tm.vec3(0, 0, 0)
-    
-    if temp > 1000.0:
-        lookup_value = (temp - 1000.0) / 100.0
-        index = ti.cast(ti.floor(lookup_value), ti.i32)
-        interpolant = lookup_value - index
-        index = ti.min(index, color_linear_gpu.shape[0] - 2)  # ensure index+1 is in bounds
-        
-        lower_color = color_linear_gpu[index]
-        upper_color = color_linear_gpu[index + 1]
-        
-        color = tm.mix(lower_color, upper_color, interpolant)
-    
+    lookup_value = (temp - 1000.0) / 100.0  # The LUT starts at 1000K and has a step of 100K per index
+    lookup_value = tm.clamp(lookup_value, 0.0, color_linear_gpu.shape[0] - 1.001)  # prevent out-of-bounds
+    index = ti.cast(ti.floor(lookup_value), ti.i32)
+    interpolant = lookup_value - index
+
+    # ensure index+1 is in bounds. should be redundant due to the previous clamp, but just in case
+    index = ti.min(index, color_linear_gpu.shape[0] - 2)
+
+    lower_color = color_linear_gpu[index]
+    upper_color = color_linear_gpu[index + 1]
+
+    color = tm.mix(lower_color, upper_color, interpolant)
+
     return color
 
 
