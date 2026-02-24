@@ -239,11 +239,11 @@ IntegrationResult = ti.types.struct(
 
 
 @ti.func
-def perform_integration(u_0, v_0, max_dphi, max_steps, e_r, e_t) -> IntegrationResult:
+def perform_integration(u_0, v_0, max_dphi, ds_target, range_limit, max_steps, e_r, e_t) -> IntegrationResult:
     u, v = u_0, v_0
     phi = 0.0
     inv_photon_sphere = 1.0 / (1.5 * R_S)
-    inv_range_limit = 1.0 / (30.0 * R_S)
+    inv_range_limit = 1.0 / (range_limit * R_S)
     hit_photon_sphere = 0
     transmittance = 1.0
     light = tm.vec3(0.0, 0.0, 0.0)
@@ -251,7 +251,6 @@ def perform_integration(u_0, v_0, max_dphi, max_steps, e_r, e_t) -> IntegrationR
     # initial position
     prev_coords_3d = (1.0 / u) * (e_r * tm.cos(phi) + e_t * tm.sin(phi))
 
-    ds_target = 0.005  # spatial step target; reduce for higher quality
     for i in range(max_steps):
         # choose angle step so arc length ~ ds_target: dphi = ds_target / r = ds_target * u
         dphi_local = ds_target * u
@@ -342,7 +341,7 @@ def render(frame_idx: ti.i32):
         v_0 = -tm.dot(ray_dir, e_r) / (tm.length(ray_origin) * tm.dot(ray_dir, e_t))
         
         # Keyword arguments are not supported in Taichi device functions
-        result = perform_integration(u_0, v_0, 0.01, 5000, e_r, e_t)
+        result = perform_integration(u_0, v_0, 0.01,  0.05, 60, 5000, e_r, e_t)
         
         u_final = result.u
         v_final = result.v
