@@ -4,11 +4,9 @@ Semi-realistic Swarzchild black hole renderer using ray marching and the Schwarz
 
 Implemented in the Taichi programming language, which is embedded in Python.
 
-Effects to-add:
+Effects added:
 * Gravitational redshift
 * Relativistic doppler shift
-
-Effects added:
 * Gravitational lensing
 * Blackbody radiation of accretion disk
 * Volume rendering of accretion disk
