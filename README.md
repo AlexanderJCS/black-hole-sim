@@ -17,7 +17,6 @@ Effects to-add:
 
 Bugs:
 * NaNs! (they're not frequent; just filter them)
-* Camera farther than 50 units cannot render the black hole
 
 Effects added:
 * Gravitational redshift

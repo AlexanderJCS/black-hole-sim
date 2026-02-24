@@ -234,7 +234,7 @@ IntegrationResult = ti.types.struct(
     phi=ti.f32,
     light=ti.types.vector(3, dtype=ti.f32),
     final_transmittance=ti.f32,
-    hit_photon_sphere=ti.i32,
+    hit_photon_sphere=ti.i32
 )
 
 
@@ -243,7 +243,7 @@ def perform_integration(u_0, v_0, max_dphi, max_steps, e_r, e_t) -> IntegrationR
     u, v = u_0, v_0
     phi = 0.0
     inv_photon_sphere = 1.0 / (1.5 * R_S)
-    inv_range_limit = 1.0 / (50.0 * R_S)
+    inv_range_limit = 1.0 / (30.0 * R_S)
     hit_photon_sphere = 0
     transmittance = 1.0
     light = tm.vec3(0.0, 0.0, 0.0)
@@ -264,7 +264,9 @@ def perform_integration(u_0, v_0, max_dphi, max_steps, e_r, e_t) -> IntegrationR
 
         phi_next = phi + dphi_local
         coords_3d = (1.0 / u_next) * (e_r * tm.cos(phi_next) + e_t * tm.sin(phi_next))
-        ds = tm.length(coords_3d - prev_coords_3d)
+
+        delta_3d = coords_3d - prev_coords_3d
+        ds = tm.length(delta_3d)
 
         # sample density with smoothed edges (see next fix)
         height = 0.25
@@ -275,7 +277,7 @@ def perform_integration(u_0, v_0, max_dphi, max_steps, e_r, e_t) -> IntegrationR
             velocity = orbital_velocity(1.0 / u_next)
             vel_dir = orbital_velocity_direction(coords_3d)
             beta = tm.clamp(velocity / scaled_C, 0.0, 0.99999)
-            observer_dir = tm.normalize(prev_coords_3d - coords_3d)  # due to curved spacetime this is *not* camera_pos - coords_3d
+            observer_dir = tm.normalize(-delta_3d)  # due to curved spacetime this is *not* camera_pos - coords_3d
             doppler_cos_theta = vel_dir.dot(observer_dir)  # for doppler shift
             gamma = 1.0 / tm.sqrt(1.0 - beta ** 2)
             g_doppler = 1 / (gamma * (1.0 - beta * doppler_cos_theta))
@@ -307,7 +309,9 @@ def perform_integration(u_0, v_0, max_dphi, max_steps, e_r, e_t) -> IntegrationR
         if u > inv_photon_sphere:
             hit_photon_sphere = 1
             break
-        if u < inv_range_limit:
+
+        moving_away = tm.dot(delta_3d, coords_3d) > 0.0
+        if u < inv_range_limit and moving_away:
             break
 
     return IntegrationResult(u, v, phi, light, transmittance, hit_photon_sphere)
@@ -356,6 +360,7 @@ def render(frame_idx: ti.i32):
         skybox_color = sample_spheremap(final_dir_3d) if result.hit_photon_sphere == 0 else tm.vec3(0.0, 0.0, 0.0)
         
         final_color = result.light * brightness_multiplier + skybox_color * result.final_transmittance
+
         if frame_idx == 0:
             linear_image[x, y] = final_color
         else:
