@@ -24,7 +24,7 @@ scaled_C = real_C * scale ** 0.5
 R_MS = 3 * R_S  # https://en.wikipedia.org/wiki/Innermost_stable_circular_orbit
 
 accretion_absorption = 1.0  # absorption coefficient
-brightness_multiplier = 5000.0
+brightness_multiplier = 50.0
 
 HEIGHT = 720
 RESOLUTION = (HEIGHT * 16 // 9, HEIGHT)
@@ -273,23 +273,25 @@ def perform_integration(u_0, v_0, max_dphi, max_steps, e_r, e_t) -> IntegrationR
         if rho > 0.0:
             velocity = orbital_velocity(1.0 / u_next)
             vel_dir = orbital_velocity_direction(coords_3d)
-            beta = velocity / scaled_C
+            beta = tm.clamp(velocity / scaled_C, 0.0, 0.99999)
             observer_dir = tm.normalize(camera_pos[None] - coords_3d)
             doppler_cos_theta = vel_dir.dot(observer_dir)  # for doppler shift
             gamma = 1.0 / tm.sqrt(1.0 - beta ** 2)
-            doppler_factor = 1 / (gamma * (1.0 - beta * doppler_cos_theta))
-            doppler_beaming_factor = tm.pow(doppler_factor, 3.0)  # intensity scales as frequency^3 for blackbody
-
+            g_doppler = 1 / (gamma * (1.0 - beta * doppler_cos_theta))
+            g_grav = tm.sqrt(1.0 - R_S * u_next)  # gravitational redshift factor
+            g = g_doppler * g_grav
+            
             radius_2d = tm.sqrt(coords_3d.x ** 2 + coords_3d.z ** 2)
-            temp = disk_temperature(radius_2d)
-            rgb = temp_to_color(temp)
-            intensity = temp_to_intensity(temp)
-            emissivity = temp_to_intensity(temp)
+            temp_emitted = disk_temperature(radius_2d)
+            temp_observed = temp_emitted * g
+            
+            rgb = temp_to_color(temp_observed)
+            intensity = temp_to_intensity(temp_observed)
             
             sigma = height / 3.0
             y_falloff = tm.exp(-0.5 * (abs(coords_3d.y) / sigma) ** 2)
             
-            light += emissivity * transmittance * ds * rgb * intensity * y_falloff * doppler_beaming_factor
+            light += transmittance * ds * rgb * intensity * y_falloff
 
             transmittance *= tm.exp(-rho * ds)
 
