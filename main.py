@@ -271,6 +271,7 @@ def perform_integration(u_0, v_0, max_dphi, max_steps, e_r, e_t) -> IntegrationR
         rho = accretion_density(coords_3d, height)
 
         if rho > 0.0:
+            # Redshift / doppler shift calculation
             velocity = orbital_velocity(1.0 / u_next)
             vel_dir = orbital_velocity_direction(coords_3d)
             beta = tm.clamp(velocity / scaled_C, 0.0, 0.99999)
@@ -281,18 +282,21 @@ def perform_integration(u_0, v_0, max_dphi, max_steps, e_r, e_t) -> IntegrationR
             g_grav = tm.sqrt(1.0 - R_S * u_next)  # gravitational redshift factor
             g = g_doppler * g_grav
             
+            # Temperature calculation
             radius_2d = tm.sqrt(coords_3d.x ** 2 + coords_3d.z ** 2)
             temp_emitted = disk_temperature(radius_2d)
-            temp_observed = temp_emitted * g
+            temp_observed = temp_emitted * g  # Include redshift in temperature for color and brightness calculation
             
+            # Color and brightness calculation
             rgb = temp_to_color(temp_observed)
-            intensity = temp_to_intensity(temp_observed)
+            brightness = temp_to_intensity(temp_observed)
             
+            # Apply a vertical falloff to simulate the disk's finite thickness using a Gaussian function
             sigma = height / 3.0
             y_falloff = tm.exp(-0.5 * (abs(coords_3d.y) / sigma) ** 2)
             
-            light += transmittance * ds * rgb * intensity * y_falloff
-
+            # Accumulate light with transmittance and falloff
+            light += transmittance * ds * rgb * brightness * y_falloff
             transmittance *= tm.exp(-rho * ds)
 
         prev_coords_3d = coords_3d
