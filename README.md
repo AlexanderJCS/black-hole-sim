@@ -14,6 +14,7 @@ Effects to-add:
   * Camera movement / video rendering
 * Physically-based effects
   * More physically accurate blackbody radiation of the accretion disk (e.g., what temperature is it really?)
+* Ray tracing the accretion disk volume (i.e., scattering of light within the disk)
 
 Bugs:
 * NaNs! (they're not frequent; just filter them)
