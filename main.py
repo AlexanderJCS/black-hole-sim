@@ -326,6 +326,24 @@ def tonemap_aces(color):
     return tm.clamp((color * (a * color + b)) / (color * (c * color + d) + e), 0.0, 1.0)
 
 
+@ti.func
+def tonemap_agx_eotf(color: tm.vec3):
+    # Define 3x3 matrix in taichi
+    agx_mat_inv = tm.mat3(
+        1.19687900512017, -0.0528968517574562, -0.0529716355144438,
+        -0.0980208811401368, 1.15190312990417, -0.0980434501171241,
+        -0.0990297440797205, -0.0989611768448433, 1.15107367264116
+    )
+
+    val = agx_mat_inv @ color
+
+    # sRGB IEC 61966-2-1 2.2 Exponent Reference EOTF Display
+    # NOTE: We're linearizing the output here. Comment/adjust when *not* using a sRGB render target
+    val = tm.pow(val, tm.vec3(2.2))
+
+    return val
+
+
 @ti.kernel
 def render(frame_idx: ti.i32):
     for x, y in ti.ndrange(RESOLUTION[0], RESOLUTION[1]):
