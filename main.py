@@ -234,7 +234,9 @@ IntegrationResult = ti.types.struct(
     phi=ti.f32,
     light=ti.types.vector(3, dtype=ti.f32),
     final_transmittance=ti.f32,
-    hit_photon_sphere=ti.i32
+    hit_photon_sphere=ti.i32,
+    e_r=ti.types.vector(3, dtype=ti.f32),
+    e_t=ti.types.vector(3, dtype=ti.f32)
 )
 
 
@@ -269,9 +271,11 @@ def perform_integration(u_0, v_0, max_dphi, ds_target, range_limit, max_steps, e
 
         # sample density with smoothed edges (see next fix)
         height = 0.25
-        rho = accretion_density(coords_3d, height)
+        sigma_a = accretion_density(coords_3d, height)
+        sigma_s = sigma_a  # assume that scattering coefficient is the same as absorption for simplicity
+        sigma_t = sigma_a + sigma_s
 
-        if rho > 0.0:
+        if sigma_a > 0.0:
             # Redshift / doppler shift calculation
             velocity = orbital_velocity(1.0 / u_next)
             vel_dir = orbital_velocity_direction(coords_3d)
@@ -296,10 +300,51 @@ def perform_integration(u_0, v_0, max_dphi, ds_target, range_limit, max_steps, e
             sigma = height / 3.0
             y_falloff = tm.exp(-0.5 * (abs(coords_3d.y) / sigma) ** 2)
             
-            # Accumulate light with transmittance and falloff
-            light += transmittance * ds * rgb * brightness * y_falloff
-            transmittance *= tm.exp(-rho * ds)
-
+            s = -tm.log(1.0 - ti.random()) / sigma_t
+            
+            if s >= ds:
+                # no interaction inside this step
+                light += transmittance * ds * rgb * brightness * y_falloff
+                transmittance *= tm.exp(-sigma_t * ds)
+            else:
+                # interaction occurs at distance s along the step
+                frac = s / ds
+                interact_pos = prev_coords_3d + delta_3d * frac
+                light += transmittance * s * rgb * brightness * y_falloff
+                transmittance *= tm.exp(-sigma_t * s)
+                
+                # decide absorption vs scattering
+                # decide absorption vs scattering
+                if ti.random() < sigma_a / sigma_t:
+                    # scattering event
+                    new_dir = tm.vec3(ti.random() * 2 - 1, ti.random() * 2 - 1, ti.random() * 2 - 1).normalized()
+                    
+                    # 1. Recalculate the orbital plane basis vectors
+                    r_norm = tm.length(interact_pos)
+                    normal = tm.cross(interact_pos, new_dir).normalized()
+                    e_r = interact_pos / r_norm
+                    e_t = tm.cross(normal, e_r).normalized()
+                    
+                    # 2. Update integration parameters for the new trajectory
+                    u_next = 1.0 / r_norm
+                    phi_next = 0.0
+                    
+                    # Add a tiny epsilon to avoid division by zero if direction is purely radial
+                    dir_dot_et = tm.dot(new_dir, e_t)
+                    if abs(dir_dot_et) < 1e-7:
+                        dir_dot_et = 1e-7 if dir_dot_et >= 0 else -1e-7
+                    
+                    v_next = -tm.dot(new_dir, e_r) / (r_norm * dir_dot_et)
+                    
+                    # 3. Override coords_3d so that prev_coords_3d becomes interact_pos at the end of the loop
+                    coords_3d = interact_pos
+                
+                else:
+                    # absorption event, photon terminates
+                    transmittance = 0.0
+                
+                
+                
         prev_coords_3d = coords_3d
         u, v, phi = u_next, v_next, phi_next
 
@@ -313,7 +358,7 @@ def perform_integration(u_0, v_0, max_dphi, ds_target, range_limit, max_steps, e
         if u < inv_range_limit and moving_away:
             break
 
-    return IntegrationResult(u, v, phi, light, transmittance, hit_photon_sphere)
+    return IntegrationResult(u, v, phi, light, transmittance, hit_photon_sphere, e_r, e_t)
 
 
 @ti.func
@@ -368,10 +413,10 @@ def render(frame_idx: ti.i32):
         cos_phi_final = tm.cos(phi_final)
         sin_phi_final = tm.sin(phi_final)
         
-        final_pos_3d = (1.0 / u_final) * (e_r * cos_phi_final + e_t * sin_phi_final)
+        final_pos_3d = (1.0 / u_final) * (result.e_r * cos_phi_final + result.e_t * sin_phi_final)
         
-        v_term = (-v_final / u_final ** 2) * (e_r * cos_phi_final + e_t * sin_phi_final)
-        u_term = (1.0 / u_final) * (-e_r * sin_phi_final + e_t * cos_phi_final)
+        v_term = (-v_final / u_final ** 2) * (result.e_r * cos_phi_final + result.e_t * sin_phi_final)
+        u_term = (1.0 / u_final) * (-result.e_r * sin_phi_final + result.e_t * cos_phi_final)
         final_dir_3d = tm.normalize(v_term + u_term)
         
         skybox_color = sample_spheremap(final_dir_3d) if result.hit_photon_sphere == 0 else tm.vec3(0.0, 0.0, 0.0)
