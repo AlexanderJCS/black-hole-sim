@@ -13,13 +13,13 @@ Effects to-add:
   * Spinning accretion disk
   * Camera movement / video rendering
 * Physically-based effects
-  * More physically accurate blackbody radiation of the accretion disk (e.g., what temperature is it really?)
-* Ray tracing the accretion disk volume (i.e., scattering of light within the disk)
+  * More physically accurate blackbody radiation of the accretion disk (e.g., what temperature is it really?) 
 
 Bugs:
 * NaNs! (they're not frequent; just filter them)
 
 Effects added:
+* Ray tracing the accretion disk
 * Gravitational redshift
 * Relativistic doppler shift
 * Gravitational lensing

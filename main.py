@@ -241,6 +241,16 @@ IntegrationResult = ti.types.struct(
 
 
 @ti.func
+def rand_unit_vec():
+    z = ti.random() * 2 - 1  # random z in [-1, 1]
+    t = ti.random() * 2 * tm.pi  # random angle in [0, 2pi]
+    r = tm.sqrt(1 - z * z)  # radius at z
+    x = r * tm.cos(t)
+    y = r * tm.sin(t)
+    return tm.vec3(x, y, z)
+
+
+@ti.func
 def perform_integration(u_0, v_0, max_dphi, ds_target, range_limit, max_steps, e_r, e_t) -> IntegrationResult:
     u, v = u_0, v_0
     phi = 0.0
@@ -317,7 +327,12 @@ def perform_integration(u_0, v_0, max_dphi, ds_target, range_limit, max_steps, e
                 # decide absorption vs scattering
                 if ti.random() < sigma_a / sigma_t:
                     # scattering event
-                    new_dir = tm.vec3(ti.random() * 2 - 1, ti.random() * 2 - 1, ti.random() * 2 - 1).normalized()
+                    new_dir = rand_unit_vec()
+                    
+                    # Scattering probability
+                    scattering_cos_theta = tm.dot(new_dir, observer_dir)
+                    thomson_weight = 0.75 * (1 + scattering_cos_theta ** 2)  # Thomson scattering phase function
+                    transmittance *= thomson_weight
                     
                     # 1. Recalculate the orbital plane basis vectors
                     r_norm = tm.length(interact_pos)
@@ -423,12 +438,13 @@ def render(frame_idx: ti.i32):
         
         final_color = result.light * brightness_multiplier + skybox_color * result.final_transmittance
 
-        if frame_idx == 0:
-            linear_image[x, y] = final_color
-        else:
-            prev_color = linear_image[x, y]
-            new_color = (prev_color * frame_idx + final_color) / (frame_idx + 1)
-            linear_image[x, y] = new_color
+        if not (tm.isnan(final_color.x) or tm.isnan(final_color.y) or tm.isnan(final_color.z)):
+            if frame_idx == 0:
+                linear_image[x, y] = final_color
+            else:
+                prev_color = linear_image[x, y]
+                new_color = (prev_color * frame_idx + final_color) / (frame_idx + 1)
+                linear_image[x, y] = new_color
 
 @ti.kernel
 def init():
