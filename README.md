@@ -18,9 +18,6 @@ Effects to-add:
 * Bugfixes
   * Make the accretion disk texture periodic for theta
 
-Bugs:
-* NaNs! (they're not frequent; just filter them)
-
 Effects added:
 * Perlin noise to the accretion disk to provide texture and detail
 * Ray tracing the accretion disk
