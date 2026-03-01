@@ -6,7 +6,6 @@ Implemented in the Taichi programming language, which is embedded in Python.
 
 Effects to-add:
 * Artistic effects
-  * Perlin noise in the accretion disk to add variation (stretched tangentially)
   * Better tonemapping function that can handle the high dynamic range of the scene better
   * Bloom
 * Temporal effects
@@ -14,11 +13,16 @@ Effects to-add:
   * Camera movement / video rendering
 * Physically-based effects
   * More physically accurate blackbody radiation of the accretion disk (e.g., what temperature is it really?) 
+* Optimizations
+  * Compute perlin noise as a texture and just sample that texture
+* Bugfixes
+  * Make the accretion disk texture periodic for theta
 
 Bugs:
 * NaNs! (they're not frequent; just filter them)
 
 Effects added:
+* Perlin noise to the accretion disk to provide texture and detail
 * Ray tracing the accretion disk
 * Gravitational redshift
 * Relativistic doppler shift
