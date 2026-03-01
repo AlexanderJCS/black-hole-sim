@@ -7,6 +7,8 @@ from PIL import Image
 
 ti.init(arch=ti.gpu)
 
+import perlin
+
 real_G = 6.6743e-11
 real_C = 299792458.0
 real_M = 20 * 1.989e30  # 20 solar masses
@@ -282,6 +284,23 @@ def perform_integration(u_0, v_0, max_dphi, ds_target, range_limit, max_steps, e
         # sample density with smoothed edges (see next fix)
         height = 0.25
         sigma_a = accretion_density(coords_3d, height)
+        
+        r = tm.length(coords_3d.xz)
+        theta = tm.atan2(coords_3d.z, coords_3d.x)
+        
+        radial_scale = 5.0
+        angular_scale = 12.5
+        
+        noise = perlin.perlin_noise(r * radial_scale / 8, theta * angular_scale / 8)
+        noise += 0.5 * perlin.perlin_noise(r * radial_scale / 4, theta * angular_scale / 4)
+        noise += 0.25 * perlin.perlin_noise(r * radial_scale / 2, theta * angular_scale / 2)
+        noise += 0.125 * perlin.perlin_noise(r * radial_scale, theta * angular_scale)
+        noise /= 1.875  # roughly in range [-1, 1]
+        noise = 0.5 * noise + 0.5
+        noise = tm.max(noise, 0.0)
+        
+        sigma_a *= 5.0 * noise
+        
         sigma_s = sigma_a  # assume that scattering coefficient is the same as absorption for simplicity
         sigma_t = sigma_a + sigma_s
 
@@ -445,6 +464,7 @@ def render(frame_idx: ti.i32):
                 prev_color = linear_image[x, y]
                 new_color = (prev_color * frame_idx + final_color) / (frame_idx + 1)
                 linear_image[x, y] = new_color
+
 
 @ti.kernel
 def init():
