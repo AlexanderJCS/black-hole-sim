@@ -471,9 +471,9 @@ def init():
     # Camera positions
     
     # Space Telescope
-    camera_pos[None] = tm.vec3(80.0, 12.5, 0.0)
-    look_at[None] = tm.vec3(0.0, 0.0, 0.0)
-    fov[None] = tm.radians(25.0)
+    # camera_pos[None] = tm.vec3(80.0, 12.5, 0.0)
+    # look_at[None] = tm.vec3(0.0, 0.0, 0.0)
+    # fov[None] = tm.radians(25.0)
     
     # Space telescope, top-down
     # camera_pos[None] = tm.vec3(0.0, 80, 0.0)
@@ -484,6 +484,11 @@ def init():
     # camera_pos[None] = tm.vec3(30.0, 0.0, 0.0)
     # look_at[None] = tm.vec3(0.0, 0.0, 0.0)
     # fov[None] = tm.radians(90.0)
+    
+    # Up close
+    camera_pos[None] = tm.vec3(5.0, 0.75, 0.0)
+    look_at[None] = camera_pos[None] + tm.vec3(-0.5, -0.3, 1)
+    fov[None] = tm.radians(45.0)
 
 
 @ti.kernel
